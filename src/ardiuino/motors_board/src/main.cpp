@@ -1,5 +1,6 @@
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+//#include <SoftwareSerial.h>
+
 
 /*
   Left mottors
@@ -43,10 +44,14 @@
 #define MAX_SPEED_ARAY          100
 
 enum Commands {
-    cmdNone,
-    cmdGetSpeed,
-    cmdSetSpeed,
-    cmdSetDirection
+    cmdNone = 0,
+    cmdGetInstantSpeed=1,
+    cmdGetAvgSpeed=2,
+    cmdSetSpeed=3,
+    cmdSetDirection=4,
+    cmdHeartbeat=5,
+    cmdAck=6,
+    cmdNack=7
 };
 
 enum CommandType {
@@ -66,7 +71,9 @@ enum Directions {
 };
 
 //------------------------------------------------------------------------------
-SoftwareSerial masterSerial(MASTER_RX_PIN, MASTER_TX_PIN); // RX, TX
+//SoftwareSerial masterSerial(MASTER_RX_PIN, MASTER_TX_PIN); // RX, TX
+#define masterSerial Serial
+
 
 const long speedReadInterval = 1000;           // interval at which to blink (milliseconds)
 
@@ -83,7 +90,8 @@ unsigned long  previousIdleMillis = 0;
 void setup() {
 
   previousMillis = 0;
-  masterSerial.begin(9600);
+
+  masterSerial.begin(115200);
 
   // setup pins
   pinMode(LM_PWM_ENA, OUTPUT);
@@ -106,6 +114,12 @@ void setup() {
 
   pinMode(SP_REAR_A_IN, INPUT);
   pinMode(SP_READ_D_IN, INPUT);
+}
+
+//------------------------------------------------------------------------------
+void sendSerialPacket(unsigned char cmd, unsigned char motor, unsigned char data) {
+    unsigned char txData [] = { 0xCA, 0xFE, cmd, motor, data};
+    masterSerial.write(txData, sizeof (txData));
 }
 
 //------------------------------------------------------------------------------
@@ -137,6 +151,7 @@ void setDirection(Motors motor, Directions dir) {
 
         dirVal1 = dir;
         dirVal2 = !dir;
+
     }
     else if ( motor == mRightRear ) {
         motorPort1 = RM_IN3;
@@ -172,34 +187,53 @@ void setSpeed(Motors motor, int speed) {
     analogWrite(motorSpeedPort, speed);
 }
 
+
 //------------------------------------------------------------------------------
 // [0xCAFE][CMD][MOTOR][DATA]
 // Cmd - read or write speed/direction
 // Motor number
 // Data  - speed value or direction value
 // Each read should be 5 bytes
+int readIndex = 0;
+int rxData [3];
+
 int decodeSerialCommand (int *motor, int *value) {
-    char comm_data[3];
+    
 
     if (!masterSerial.available()) {
         return cmdNone;
     }
 
-    if (masterSerial.readBytes(comm_data, 2) != 2) {
-        return cmdNone;
-    }
+    while (masterSerial.available()) {
+        unsigned char ch = (Serial.read() & 0xFF);
+        
+        if (readIndex == 0 && ch == 0xCA) {
+            //tft.print("CA");
+            readIndex = 1;
+            
+        } else if (readIndex == 1 && ch == 0xFE) {
+            //tft.print("FE");
+            readIndex = 2;
+            
+        } else if (readIndex >= 2 && readIndex  <= (3 + 2)) {
+            
+            if (readIndex - 2 == 3) {
+                readIndex = 0;
+                *motor = rxData[1];
+                *value = rxData[2];
 
-    if (comm_data[0] != 0xCA || comm_data[1] != 0xFE)  {
-        return cmdNone;
-    }
+                
+                return rxData[0];
 
-    if (masterSerial.readBytes(comm_data, 3) != 3) {
-        return cmdNone;
+            }
+            rxData[readIndex - 2] = ch;
+            readIndex ++ ;
+        } else {
+           readIndex = 0;
+           return cmdNone;            
+        }
     }
-
-    *motor =  comm_data[1];
-    *value =  comm_data[2];
-    return comm_data[0];
+    return cmdNone;
 }
 //------------------------------------------------------------------------------
 char getAvgValue( char *values, int size) {
@@ -209,45 +243,39 @@ char getAvgValue( char *values, int size) {
 
 //------------------------------------------------------------------------------
 void executeCommand (int cmd, int motor, int value) {
-    if (cmd == cmdGetSpeed) {
 
-        char response[]= {
-            0xCA, 0xFE, 
-            cmdGetSpeed, 
-            frontSpeedArray[0], 
-            rearSpeedArray[0], 
-            getAvgValue(frontSpeedArray, speedCounter),
-            getAvgValue(rearSpeedArray, speedCounter)
+    if (cmd == cmdGetInstantSpeed) {
 
-        };
-
-        // response [3] = ;
-        // response [4] = rearSpeedArray[0];
-
-        // response []
-
-
-        masterSerial.write(response, sizeof(response));
-
-        //
-        // if (motor == mLeftFront || motor == mRightFront) {
-        //     masterSerial.write(frontSpeedArray[0]);
-        // } else if (motor == mLeftRear || motor == mRightRear) {
-        //     masterSerial.write(rearSpeedArray[0]);
-        // }
+        if (motor == mLeftFront || motor == mRightFront) {
+            sendSerialPacket(cmdGetInstantSpeed, motor, frontSpeedArray[0]);
+        } else if (motor == mLeftRear || motor == mRightRear) {
+            sendSerialPacket(cmdGetInstantSpeed, motor, rearSpeedArray[0]);
+        }
+    }
+    else if (cmd == cmdGetAvgSpeed) {
+        if (motor == mLeftFront || motor == mRightFront) {
+            sendSerialPacket(cmdGetInstantSpeed, motor, getAvgValue(frontSpeedArray, speedCounter));
+        } else if (motor == mLeftRear || motor == mRightRear) {
+            sendSerialPacket(cmdGetInstantSpeed, motor, getAvgValue(rearSpeedArray, speedCounter));
+        }
     }
     else if (cmd == cmdSetSpeed) {
         setSpeed(motor, value);
+        sendSerialPacket(cmdAck, motor, cmdSetSpeed);
     }
     else if (cmd == cmdSetDirection) {
         setDirection(motor, value);
+        sendSerialPacket(cmdAck, motor, cmdSetDirection);
+    } else {
+        sendSerialPacket(cmdNack, motor, cmd);
     }
-
 }
+
 
 unsigned long lastSpeedUpdate = 0;
 
 //------------------------------------------------------------------------------
+int hbCounter = 0;
 void loop() {
 
     int motor;
@@ -257,14 +285,18 @@ void loop() {
     int cmd = decodeSerialCommand(&motor, &value);
 
     if (cmd != cmdNone) {
-
         executeCommand(cmd, motor, value);
         previousIdleMillis = millis();
     } else {
 
         if (currentMillis - previousIdleMillis >= speedReadInterval) {
-            masterSerial.print(millis());
-            masterSerial.println(":: Heart beat");
+
+            //long ml = millis();
+            // masterSerial.print(millis());
+            // masterSerial.println(":: Heart beat");
+
+            hbCounter ++;
+            sendSerialPacket(cmdHeartbeat,hbCounter & 0xFF, (hbCounter >> 8) & 0xFF);
             previousIdleMillis = millis();
         }
 
@@ -272,10 +304,12 @@ void loop() {
                 lastSpeedUpdate = millis();
 
                 // stop mottors if no communication from master
-                executeCommand(cmdSetSpeed, mLeftFront, 0);
-                executeCommand(cmdSetSpeed, mLeftRear, 0);
-                executeCommand(cmdSetSpeed, mRightFront, 0);
-                executeCommand(cmdSetSpeed, mRightRear, 0);
+
+                setSpeed(mLeftFront, 0);
+                setSpeed(mLeftRear, 0);
+
+                setSpeed(mRightFront, 0);
+                setSpeed(mRightRear, 0);
         }
     }
 

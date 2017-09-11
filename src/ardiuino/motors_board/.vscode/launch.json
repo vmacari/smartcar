@@ -6,7 +6,7 @@
             "request": "launch",
             "cwd": "${workspaceRoot}",
             "name": "PlatformIO Debugger",
-            "target": "/Users/vmacari/Documents/Projects/Arduino/smartcar/src/ardiuino/motors_board/.pioenvs/nanoatmega328/firmware.elf",
+            "target": "/Users/vmacari/Documents/Projects/Arduino/smartcar/src/ardiuino/motors_board/.pioenvs/uno/firmware.elf",
             "gdbpath": "/Users/vmacari/.platformio/penv/bin/piodebuggdb",
             "autorun": [ "source .pioinit" ]
         }
