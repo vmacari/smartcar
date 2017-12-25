@@ -3,9 +3,10 @@ import struct as structures
 from multiprocessing import Process, Lock
 import time
 from enum import Enum
-
+from utils.logger import loge, logi
 
 class ComDriver:
+
     class Commands(Enum):
         cmdNone = 0
         cmdGetInstantSpeed = 1
@@ -17,9 +18,8 @@ class ComDriver:
         cmdNack = 7
 
     # self.data_received_callback(rx_buffer, byte_index)
-    def __init__(self, port, baudrate, data_received_callback):
+    def __init__(self, port, baudrate):
 
-        self.data_received_callback = data_received_callback
         self.serial_port = serial.serial_for_url(port, timeout=1, do_not_open=1)
 
         self.serial_port.baudrate = baudrate
@@ -40,16 +40,11 @@ class ComDriver:
         while self.serial_port._isOpen:
 
             try:
-
                 if self.serial_port.inWaiting() <= 0:
                     time.sleep(0.1)
                     continue
 
                 b = self.serial_port.read()
-                if isinstance(b, str) :
-                    print('string ', b[0])
-                else:
-                    print('data ', hex(b))
 
                 if byte_index == 0:
                     if b == '\xca':
@@ -73,13 +68,16 @@ class ComDriver:
                     byte_index = 0
 
             except IOError as io_error:
-                print ('IO Serial port exception : {0}'.format(io_error))
+                loge('IO Serial port exception : {0}'.format(io_error))
                 break
             except serial.SerialException as se:
-                print ('Serial port exception : {0}'.format(se))
+                loge('Serial port exception : {0}'.format(se))
                 return
 
         return None
+
+    def data_received_callback(self, data, count):
+        raise NotImplemented('Method shoul be implemented')
 
     # [0xCAFE][CMD][MOTOR][DATA]
     def write_packet_data(self, cmd, motor, byte_data):
@@ -98,39 +96,47 @@ class ComDriver:
         # Read back AK
         return True
 
+class MotorBoard(ComDriver):
 
-class Motor:
     def __init__(self):
+        ComDriver.__init__(self, "/dev/ttyUSB0", 115200)
+
+
+    def data_received_callback(self, data, count):
+        #print ('Received {0}'.format(ComDriver.Commands(int(data[0]))))
+        cmd = data[0]
+
+        #print ('Received {0}'.format(ComDriver.Commands(cmd)))
+
+        if ComDriver.Commands(cmd) is ComDriver.Commands.cmdHeartbeat:
+
+            hbL = data[1]
+            hbH = data[2]
+            logi('Heartbeat {0}'.format(hbL | (hbH << 8)))
+
+        if ComDriver.Commands(cmd) is ComDriver.Commands.cmdAck:
+            pass
+
+        if ComDriver.Commands(cmd) is ComDriver.Commands.cmdGetAvgSpeed:
+            pass
+
+        if ComDriver.Commands(cmd) is ComDriver.Commands.cmdGetInstantSpeed:
+            pass
+
+    def set_speed(self):
         pass
-
-
-class SpeedEncoder:
-    def __init__(self):
-        pass
-
-
-def data_received_callback(data, count):
-    #print ('Received {0}'.format(ComDriver.Commands(int(data[0]))))
-    cmd = data[0]
-
-    print ('Received {0}'.format(ComDriver.Commands(cmd)))
-
-    if ComDriver.Commands(cmd) is ComDriver.Commands.cmdHeartbeat:
-
-        hbL = data[1]
-        hbH = data[2]
-
-        print ('Heartbeat {0}'.format(hbL | (hbH << 8)))
-
 
 
 
 if __name__ == "__main__":
 
-    cd = ComDriver("/dev/cu.SLAB_USBtoUART", 115200,
-                   data_received_callback=data_received_callback)
+    # cd = ComDriver("/dev/ttyUSB0", 115200,
+    #                data_received_callback=data_received_callback)
+    #
+    # print("Done")
 
-    print("Done")
+
+    MotorBoard()
 
     while 1 == 1:
         print('.')

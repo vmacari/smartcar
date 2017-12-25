@@ -300,6 +300,8 @@ void loop() {
             previousIdleMillis = millis();
         }
 
+        // make sure master app is constantly sending dat. If for some reasons
+        // master app stops to respond, stop the car
         if (currentMillis - lastSpeedUpdate >= speedReadInterval) {
                 lastSpeedUpdate = millis();
 
