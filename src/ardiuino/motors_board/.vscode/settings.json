@@ -1,0 +1,5 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/vmacari/.platformio/penv/bin:/Users/vmacari/.platformio/penv:/Users/vmacari/anaconda2/bin:/opt/local/bin:/opt/local/sbin:/Users/vmacari/.fastlane/bin:/Users/vmacari/anaconda/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/TeX/texbin:/opt/X11/bin:/Users/vmacari/Documents/Projects/esp/bin"
+    }
+}

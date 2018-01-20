@@ -51,13 +51,14 @@ enum Commands {
     cmdSetDirection=4,
     cmdHeartbeat=5,
     cmdAck=6,
-    cmdNack=7
+    cmdLog=7,
+    cmdNack=8
 };
 
-enum CommandType {
-    ctRead,
-    ctWrite
-};
+//enum CommandType {
+//    ctRead,
+//    ctWrite
+//};
 enum Motors {
     mLeftFront,
     mLeftRear,
@@ -121,6 +122,15 @@ void sendSerialPacket(unsigned char cmd, unsigned char motor, unsigned char data
     unsigned char txData [] = { 0xCA, 0xFE, cmd, motor, data};
     masterSerial.write(txData, sizeof (txData));
 }
+
+void sendLogMessage(const char *message) {
+
+    unsigned char txData [] = { 0xCA, 0xFE, cmdLog,  strlen(message)};
+
+    masterSerial.write(txData, sizeof(txData));
+    masterSerial.write(message, strlen(message));
+}
+
 
 //------------------------------------------------------------------------------
 void setDirection(Motors motor, Directions dir) {
@@ -198,7 +208,6 @@ int readIndex = 0;
 int rxData [3];
 
 int decodeSerialCommand (int *motor, int *value) {
-    
 
     if (!masterSerial.available()) {
         return cmdNone;
@@ -276,6 +285,7 @@ unsigned long lastSpeedUpdate = 0;
 
 //------------------------------------------------------------------------------
 int hbCounter = 0;
+
 void loop() {
 
     int motor;
@@ -285,28 +295,22 @@ void loop() {
     int cmd = decodeSerialCommand(&motor, &value);
 
     if (cmd != cmdNone) {
+        char msg[100] = {0};
+        sprintf(msg, "Execute command %x", cmd);
+        sendLogMessage(msg);
         executeCommand(cmd, motor, value);
         previousIdleMillis = millis();
     } else {
 
         if (currentMillis - previousIdleMillis >= speedReadInterval) {
-
-            //long ml = millis();
-            // masterSerial.print(millis());
-            // masterSerial.println(":: Heart beat");
-
             hbCounter ++;
             sendSerialPacket(cmdHeartbeat,hbCounter & 0xFF, (hbCounter >> 8) & 0xFF);
             previousIdleMillis = millis();
         }
 
-        // make sure master app is constantly sending dat. If for some reasons
-        // master app stops to respond, stop the car
         if (currentMillis - lastSpeedUpdate >= speedReadInterval) {
                 lastSpeedUpdate = millis();
-
                 // stop mottors if no communication from master
-
                 setSpeed(mLeftFront, 0);
                 setSpeed(mLeftRear, 0);
 

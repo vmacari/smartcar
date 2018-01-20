@@ -1,0 +1,3 @@
+#!/bin/bash
+
+export PYTHONPATH=/home/vmacari/projects/car_auto/smartcar/src/python
